@@ -12,7 +12,7 @@
 #      COMPANY:  Fachhochschule Suedwestfalen, Iserlohn
 #      VERSION:  see $VERSION below
 #      CREATED:  04.05.2006
-#     REVISION:  $Id: Solver.pm,v 1.3 2007/06/06 15:07:31 mehner Exp $
+#     REVISION:  $Id: Solver.pm,v 1.5 2007/12/14 16:44:06 mehner Exp $
 #===============================================================================
 
 package Games::Sudoku::Solver;
@@ -23,7 +23,7 @@ use warnings;
 #===============================================================================
 #  MODULE INTERFACE
 #===============================================================================
-use version; our $VERSION = qv('1.0.0');
+our $VERSION = '1.1.0';
 
 use Carp;                                       # warn/die of errors
 use Clone;                                      # recursively copy Perl datatypes
@@ -53,11 +53,16 @@ our %EXPORT_TAGS    = (
 #===============================================================================
 {                                               # CLOSURE
     my $solution_number = 0;                    # solution counter
-    my $solution_max    = 10;                   # maximal number of solutions (0=unbound)
     my @col_empty;                              # stack of free cells (column number)
     my @row_empty;                              # stack of free cells (row number)
     my $index_last;                             # last index in these stacks
     my $index_empty;                            # actual index in these stacks
+    my  %restriction    =
+    (
+        solution_max    => 10,                  # maximal number of solutions (0=unbound)
+        diagonal_ul_lr  =>  0,                  #
+        diagonal_ll_ur  =>  0,                  #
+    );
 
     #===  FUNCTION  ================================================================
     #         NAME:  sudoku_solve
@@ -65,10 +70,16 @@ our %EXPORT_TAGS    = (
     #  DESCRIPTION:  solve a Sudoku by recursion
     #   PARAMETERS:  (1) reference to a Sudoku (array of arrays)
     #                (2) reference to a solution array (array of arrays of arrays)
+    #                (3) restrictions (optional)
     #      RETURNS:  number of solutions found
     #===============================================================================
     sub sudoku_solve {
-        my ( $sudoku_ref, $solution_ref ) = @_;
+        my ( $sudoku_ref, $solution_ref, %option ) = @_;
+
+
+        if ( %option ) {
+            _check_options( %option );
+        }
 
         #---------------------------------------------------------------------------
         #  initialize the stacks
@@ -91,6 +102,30 @@ our %EXPORT_TAGS    = (
     }    # ----------  end of subroutine sudoku_solve  ----------
 
     #===  FUNCTION  ================================================================
+    #         NAME:  _check_options
+    #      PURPOSE:  check for restrictions
+    #   PARAMETERS:  hash with restrictions
+    #      RETURNS:  ---
+    #===============================================================================
+    sub _check_options {
+        my  ( %ref )    = @_;
+        while ( my ( $key, $value ) = each %ref ) {
+                $restriction{$key}  = $value;
+        }
+
+        set_solution_max( $restriction{solution_max} );
+
+        if ( $restriction{diagonal_ul_lr} !~ m/^[01]$/xm ) {
+            $restriction{diagonal_ul_lr}    = 0;
+        }
+
+        if ( $restriction{diagonal_ll_ur} !~ m/^[01]$/xm ) {
+            $restriction{diagonal_ll_ur}    = 0;
+        }
+        return ;
+    }   # ----------  end of subroutine _check_options  ----------
+
+    #===  FUNCTION  ================================================================
     #         NAME:  _sudoku_recurse
     #      PURPOSE:  organize the recursion
     #   PARAMETERS:  (1) reference to a Sudoku (array of arrays)
@@ -103,7 +138,7 @@ our %EXPORT_TAGS    = (
         #---------------------------------------------------------------------------
         #  check if maximal number of solutions are reached
         #---------------------------------------------------------------------------
-        if ( $solution_number > 0 && $solution_number == $solution_max ) {
+        if ( $solution_number > 0 && $solution_number == $restriction{solution_max} ) {
             return $solution_number;
         }
 
@@ -133,14 +168,79 @@ our %EXPORT_TAGS    = (
     }    # ----------  end of subroutine _sudoku_recurse  ----------
 
     #===  FUNCTION  ================================================================
+    #         NAME:  _find_missing_values
+    #      PURPOSE:  find possible values for a free cell
+    #   PARAMETERS:  (1) reference to a Sudoku (array of arrays)
+    #                (2) row index of the cell
+    #                (3) column index of the cell
+    #      RETURNS:  array with possible values
+    #===============================================================================
+    sub _find_missing_values {
+        my ( $sudoku_ref, $row, $col ) = @_;
+        my @found = ( 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 );
+        my @not_used;
+
+        #---------------------------------------------------------------------------
+        #  check row and column
+        #---------------------------------------------------------------------------
+        foreach my $i ( 0 .. 8 ) {
+            $found[ $sudoku_ref->[$row][$i] ]++;
+            $found[ $sudoku_ref->[$i][$col] ]++;
+        }
+
+        #---------------------------------------------------------------------------
+        #  check submatrix
+        #---------------------------------------------------------------------------
+        my $smi = $row - $row % 3;
+        my $smj = $col - $col % 3;
+        foreach my $i ( $smi .. ( $smi + 2 ) ) {
+            foreach my $j ( $smj .. ( $smj + 2 ) ) {
+                $found[ $sudoku_ref->[$i][$j] ]++;
+            }
+        }
+
+        #---------------------------------------------------------------------------
+        #  RESTRICTIONS
+        #  check 1. diagonal (if requested)
+        #---------------------------------------------------------------------------
+        if ( $restriction{diagonal_ul_lr} == 1 && $row == $col ) {
+            foreach my $i ( 0 .. 8 ) {
+                $found[ $sudoku_ref->[$i][$i] ]++;
+            }
+        }
+
+        #---------------------------------------------------------------------------
+        #  RESTRICTIONS
+        #  check 2. diagonal (if requested)
+        #---------------------------------------------------------------------------
+        if ( $restriction{diagonal_ll_ur} == 1 && ($row + $col) == 8 ) {
+            foreach my $i ( 0 .. 8 ) {
+                $found[ $sudoku_ref->[$i][8-$i] ]++;
+            }
+        }
+
+        #---------------------------------------------------------------------------
+        #  identify the missing values
+        #---------------------------------------------------------------------------
+        foreach my $i ( 1 .. 9 ) {
+            if ( $found[$i] == 0 ) {
+                push @not_used, $i;
+            }
+        }
+
+        return (@not_used);
+    }    # ----------  end of subroutine _find_missing_values  ----------
+
+    #===  FUNCTION  ================================================================
     #         NAME:  set_solution_max
     #      PURPOSE:  set maximal number of solutions to search for
     #   PARAMETERS:  positive number (positive sign allowed)
     #      RETURNS:  ---
     #===============================================================================
     sub set_solution_max {
-        if ( $_[0] =~ m/^[+]?\d+$/xm ) {
-            $solution_max = $_[0];
+        my  ( $limit )  = @_;
+        if ( $limit =~ m/^[+]?\d+$/xm && $limit > 0 ) {
+            $restriction{solution_max} = $limit;
         }
         return;
     }    # ----------  end of subroutine set_solution_max  ----------
@@ -152,48 +252,10 @@ our %EXPORT_TAGS    = (
     #      RETURNS:  maximal number of solutions to search for
     #===============================================================================
     sub get_solution_max {
-        return $solution_max;
+        return $restriction{solution_max};
     }    # ----------  end of subroutine get_solution_max  ----------
 
-}
-
-#===  FUNCTION  ================================================================
-#         NAME:  _find_missing_values
-#      PURPOSE:  find possible values for a free cell
-#   PARAMETERS:  (1) reference to a Sudoku (array of arrays)
-#                (2) row index of the cell
-#                (3) column index of the cell
-#      RETURNS:  array with possible values
-#===============================================================================
-sub _find_missing_values {
-    my ( $sudoku_ref, $row, $col ) = @_;
-    my @found = ( 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 );
-    my @not_used;
-
-    foreach my $i ( 0 .. 8 ) {
-        $found[ $sudoku_ref->[$row][$i] ]++;    # check row
-        $found[ $sudoku_ref->[$i][$col] ]++;    # check column
-    }
-
-    #---------------------------------------------------------------------------
-    #  check submatrix
-    #---------------------------------------------------------------------------
-    my $smi = $row - $row % 3;
-    my $smj = $col - $col % 3;
-    foreach my $i ( $smi .. ( $smi + 2 ) ) {
-        foreach my $j ( $smj .. ( $smj + 2 ) ) {
-            $found[ $sudoku_ref->[$i][$j] ]++;
-        }
-    }
-
-    foreach my $i ( 1 .. 9 ) {
-        if ( $found[$i] == 0 ) {
-            push @not_used, $i;
-        }
-    }
-
-    return (@not_used);
-}    # ----------  end of subroutine _find_missing_values  ----------
+}                                               # end CLOSURE
 
 #===  FUNCTION  ================================================================
 #         NAME:  sudoku_check
@@ -257,7 +319,7 @@ sub sudoku_check {
                     $count{$key}++;
                     if ( $key > 0 && $count{$key} > 1 ) {
                         my $submat = $ii + $jj / 3 + 1;
-                        croak "value repeated in submatrix ${i} \n";
+                        croak "value repeated in submatrix $submat \n";
                     }
                 }
             }
@@ -268,7 +330,7 @@ sub sudoku_check {
 
 #===  FUNCTION  ================================================================
 #         NAME:  sudoku_print
-#      PURPOSE:  print Sudoku 
+#      PURPOSE:  print Sudoku
 #  DESCRIPTION:  Simple text output
 #   PARAMETERS:  (1) reference to a Sudoku (array of arrays)
 #      RETURNS:  ---
@@ -289,64 +351,64 @@ sub sudoku_print {
 #      RETURNS:  ---
 #===============================================================================
 sub sudoku_read {
-	my ( $sdk_ref, $filename ) = @_;
+    my ( $sdk_ref, $filename ) = @_;
 
-	open my $INFILE, '<', $filename
-		or die "$0 : failed to open  input file $filename : $!\n";
+    open my $INFILE, '<', $filename
+        or die "$0 : failed to open  input file $filename : $!\n";
 
-	while (<$INFILE>) {
-		if (
-			m/ ^                                # start of line
+    while (<$INFILE>) {
+        if (
+            m{ ^                                # start of line
             \s*                                 # leading whitespaces
-            (\d\s+){8}                          # 8 digits separated by whitespaces
+            (?:\d\s+){8}                        # 8 digits separated by whitespaces
             \d                                  # 9. digit
             \s*                                 # trailing whitespaces
             $                                   # end of line
-			/xm
-		)
-		{
+            }xm
+        )
+        {
             push @{$sdk_ref}, [split];          # array of arrays
-		}
-		else 
-		{
-			if (
-				m/  ^                           # start of line
+        }
+        else
+        {
+            if (
+                m{  ^                           # start of line
                 \s*                             # leading whitespaces
                 [.\d]{9}                        # 9 digits or points
                 \s*                             # trailing whitespaces
                 $                               # end of line
-				/xm
-			)
-			{
-				$_ =~ s/[.]/0/gxm;
-				$_ =~ s/(\d)/ $1/gxm;
+                }xm
+            )
+            {
+                $_ =~ s/[.]/0/gxm;
+                $_ =~ s/(\d)/ $1/gxm;
                 push @{$sdk_ref}, [split];      # array of arrays
-			}
-			else 
-			{
-				if (
-                    m/ ^                        # start of line
-					\s*                         # leading whitespaces
-					#                           # start of comment
-					/xm
-				)
-				{
-					next;
-				}
-				else 
-				{
-					die "error in file '$filename', line ${.}.\n";
-				}
-			}
-		}
-	}
+            }
+            else
+            {
+                if (
+                    m{ ^                        # start of line
+                    \s*                         # leading whitespaces
+                    #                           # start of comment
+                    }xm
+                )
+                {
+                    next;
+                }
+                else
+                {
+                    die "error in file '$filename', line ${.}.\n";
+                }
+            }
+        }
+    }
 
-	close $INFILE
-		or warn "$0 : failed to close input file $filename : $!\n";
+    close $INFILE
+        or warn "$0 : failed to close input file $filename : $!\n";
 
-	sudoku_check($sdk_ref);
+    sudoku_check($sdk_ref);
 
-	return;
+    return;
 }    # ----------  end of subroutine sudoku_read  ----------
 
 #===  FUNCTION  ================================================================
@@ -387,6 +449,7 @@ sub sudoku_set {
 }    # ----------  end of subroutine sudoku_set  ----------
 
 1;   # Magic true value required at end of module
+
 __END__
 
 #===============================================================================
@@ -429,7 +492,7 @@ This document describes Games::Sudoku::Solver version 1.0.0
 
 
     my  $cells_occupied = count_occupied_cells( \@sudoku ); # some statistics
-    print "\n", $cells_occupied, " cells occupied, ", 
+    print "\n", $cells_occupied, " cells occupied, ",
              81-$cells_occupied, " cells free\n";
 
     set_solution_max(4);                            # stop having 4 solutions found
@@ -445,7 +508,7 @@ This document describes Games::Sudoku::Solver version 1.0.0
 =head1 DESCRIPTION
 
 This module solves 9x9-Sudoku puzzles by recursion.
-There is no restriction to the difficulty and the number of solutions. 
+There is no restriction to the difficulty and the number of solutions.
 
 The puzzle can be stored in a single dimension array or in a file,
 where unknown cells are presented by zeros or points.
@@ -478,7 +541,7 @@ Discard this value for this cell from the set of allowed values. Go to step 2.
 
 =item *
 
-If there exists an  allowed values and the Sudoku is not complete go ahead to the 
+If there exists an  allowed values and the Sudoku is not complete go ahead to the
 next free cell in the list of free cells.   Go to step 2.
 
 =item *
@@ -536,7 +599,7 @@ C<All> exports all subroutines described below.
 
 =head2 C<sudoku_print>
 
-      PURPOSE:  print Sudoku 
+      PURPOSE:  print Sudoku
   DESCRIPTION:  Simple text output
    PARAMETERS:  (1) reference to a Sudoku (array of arrays)
       RETURNS:  ---
@@ -566,7 +629,7 @@ C<All> exports all subroutines described below.
     The second format uses points for the empty cells. Separating whitespaces
     are not allowed:
 
-         # 1 solution 
+         # 1 solution
          3.4...6.2
          9..627..4
          6..1.4..7
@@ -577,7 +640,7 @@ C<All> exports all subroutines described below.
          ...263...
          8.5...9.6
 
-    There is no restriction on the number of empty cells. 
+    There is no restriction on the number of empty cells.
     A completely empty Sudokus would generate all possible solutions:
 
          # 6.670.903.752.021.072.936.960 solutions
@@ -606,7 +669,28 @@ C<All> exports all subroutines described below.
   DESCRIPTION:  solve a Sudoku by recursion
    PARAMETERS:  (1) reference to a Sudoku (array of arrays)
                 (2) reference to a solution array (array of arrays of arrays)
+                (3) restrictions (hash; optional)
       RETURNS:  number of solutions found
+
+Possible restrictions are:
+
+=over
+
+=item Maximal number of solutions (0=unbound)
+
+    solution_max    => 10
+
+=item Unique digits on the 1. diagonal (upper-left to lower-right)
+
+    diagonal_ul_lr  =>  0                       # not unique
+    diagonal_ul_lr  =>  1                       # unique
+
+=item Unique digits on the 2. diagonal (lower-left to upper-right)
+
+    diagonal_ll_ur  =>  0                       # not unique
+    diagonal_ll_ur  =>  1                       # unique
+
+=back
 
 =head1 DIAGNOSTICS
 
@@ -648,7 +732,7 @@ Games::Sudoku::Solver requires no configuration files or environment variables.
 
 =head1 DEPENDENCIES
 
-    Carp  - warn of errors 
+    Carp  - warn of errors
     Clone - recursively copy Perl datatypes
 
 =head1 INCOMPATIBILITIES

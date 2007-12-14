@@ -11,9 +11,8 @@
 #        NOTES:  ---
 #       AUTHOR:  Dr.-Ing. Fritz Mehner (Mn), <mehner@fh-swf.de>
 #      COMPANY:  Fachhochschule Südwestfalen, Iserlohn
-#      VERSION:  1.0
 #      CREATED:  08.05.2007 16:38:55 CEST
-#     REVISION:  $Id: sudoku.t,v 1.2 2007/06/05 16:35:11 mehner Exp $
+#     REVISION:  $Id: sudoku.t,v 1.3 2007/12/14 16:45:13 mehner Exp $
 #===============================================================================
 
 use strict;
@@ -22,7 +21,7 @@ use warnings;
 use lib 'lib';
 use Games::Sudoku::Solver qw(:Minimal get_solution_max set_solution_max);
 
-use Test::More tests => 30;                     # last test to print
+use Test::More tests => 31;                     # last test to print
 
 #---------------------------------------------------------------------------
 #  test against solutions from files:
@@ -35,6 +34,20 @@ use Test::More tests => 30;                     # last test to print
 #---------------------------------------------------------------------------
 my @problemfile  = glob("t/data/*.problem");
 my @solutionfile = glob("t/data/*.solution");
+
+#---------------------------------------------------------------------------
+#  set/get maximal number of solutions to search for
+#  use exported subroutine names
+#---------------------------------------------------------------------------
+
+is( get_solution_max(), 10, "maximal number of solutions to search for; default value" );
+
+set_solution_max( 7 );
+
+is( get_solution_max(), 7, "maximal number of solutions to search for; new value" );
+
+set_solution_max( 10 );
+set_solution_max( 0 );
 
 foreach my $testnumber ( 0 .. @problemfile - 1 ) {
     my @sudoku;
@@ -71,14 +84,18 @@ foreach my $testnumber ( 0 .. @problemfile - 1 ) {
     close $INFILE2
         or warn "$0 : failed to close input file '$INFILE_file_name2' : $!\n";
 
-	#---------------------------------------------------------------------------
-	#  solve problem
-	#---------------------------------------------------------------------------
-    $solutions = Games::Sudoku::Solver::sudoku_solve( \@sudoku, \@solution_found );
+    #---------------------------------------------------------------------------
+    #  solve problem
+    #---------------------------------------------------------------------------
+    $solutions = Games::Sudoku::Solver::sudoku_solve( 
+                    \@sudoku,
+                    \@solution_found,
+                    ( solution_max => 10 )
+                );
 
-	#---------------------------------------------------------------------------
-	#  check solutions
-	#---------------------------------------------------------------------------
+    #---------------------------------------------------------------------------
+    #  check solutions
+    #---------------------------------------------------------------------------
     if ( $solutions != 0 ) {
         foreach my $n ( 1 .. @solution_found ) {
             is_deeply(
@@ -122,22 +139,53 @@ my @solution_raw = qw(
 my @solution_found;
 my @solution_given;
 my @sudoku;
+my $solutions;
 
 Games::Sudoku::Solver::sudoku_set( \@sudoku,         \@sudoku_raw );
 Games::Sudoku::Solver::sudoku_set( \@solution_given, \@solution_raw );
 
-my $solutions = Games::Sudoku::Solver::sudoku_solve( \@sudoku, \@solution_found );
+$solutions = Games::Sudoku::Solver::sudoku_solve( \@sudoku, \@solution_found );
 
 is_deeply( $solution_found[0], \@solution_given, "test sudoku_set()" );
 
 #---------------------------------------------------------------------------
-#  set/get maximal number of solutions to search for
-#  use exported subroutine names
+# test diagonal sudokus
 #---------------------------------------------------------------------------
+my @sudoku_diagonalx = qw(
+    0 4 0 0 0 0 0 0 0
+    0 0 0 0 8 0 1 7 0
+    0 7 0 0 9 0 0 2 0
+    0 0 3 1 2 0 0 4 0
+    0 0 9 0 0 5 0 0 7
+    0 2 4 0 7 0 0 5 0
+    0 0 0 6 0 0 7 1 9
+    9 0 0 7 0 0 0 0 0
+    1 6 0 0 0 9 0 0 5
+);
 
-is( get_solution_max(), 10, "maximal number of solutions to search for; default value" );
+my @solution_diagonalx = qw(
+    2 4 1 5 6 7 8 9 3
+    5 9 6 3 8 2 1 7 4
+    3 7 8 4 9 1 5 2 6
+    7 5 3 1 2 6 9 4 8
+    6 1 9 8 4 5 2 3 7
+    8 2 4 9 7 3 6 5 1
+    4 3 2 6 5 8 7 1 9
+    9 8 5 7 1 4 3 6 2
+    1 6 7 2 3 9 4 8 5
+);
 
-set_solution_max( 7 );
+Games::Sudoku::Solver::sudoku_set( \@sudoku,         \@sudoku_diagonalx );
+Games::Sudoku::Solver::sudoku_set( \@solution_given, \@solution_diagonalx );
+@solution_found = ();                           # empty the array
 
-is( get_solution_max(), 7, "maximal number of solutions to search for; new value" );
+$solutions = Games::Sudoku::Solver::sudoku_solve( \@sudoku, \@solution_found, 
+    (   solution_max    => 1,  
+        diagonal_ul_lr  => 1,   
+        diagonal_ll_ur  => 1,   
+    ), 
+);
+
+is_deeply( $solution_found[0], \@solution_given, "test diagonal sudoku" );
+
 

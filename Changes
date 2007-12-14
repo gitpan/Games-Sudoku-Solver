@@ -6,3 +6,7 @@ Revision history for Games-Sudoku-Solver
 1.0.0  June 5 2007
        Initial release.
 
+1.1.0  December 12 2007
+       Bugfix: sudoku_check reports wrong submatrix.
+       Solution can be restricted to have unique digits on one or both diagonals.
+

@@ -1,7 +1,7 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         Games-Sudoku-Solver
-version:      v1.0.0
+version:      1.1.0
 version_from: lib/Games/Sudoku/Solver.pm
 installdirs:  site
 requires:
